@@ -1,6 +1,6 @@
 # sky-color-wallpaper
 
-![CI](https://github.com/qryxip/sky-color-wallpaper/workflows/CI/badge.svg)
+[![CI](https://github.com/qryxip/sky-color-wallpaper/workflows/CI/badge.svg)](https://github.com/qryxip/sky-color-wallpaper/actions?workflow=CI)
 ![Maintenance](https://img.shields.io/maintenance/yes/2019)
 ![license](https://img.shields.io/badge/license-MIT%20OR%20Apache%202.0-blue)
 [![dependency status](https://deps.rs/repo/github/qryxip/sky-color-wallpaper/status.svg)](https://deps.rs/repo/github/qryxip/sky-color-wallpaper)
