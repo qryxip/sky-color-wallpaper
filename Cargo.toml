@@ -1,10 +1,12 @@
 [package]
 edition = "2018"
 name = "sky-color-wallpaper"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["Ryo Yamashita <qryxip@gmail.com>"]
-publish = false
 description = "Set random wallpapers according to sky color"
+readme = "README.md"
+keywords = ["cli", "wallpaper"]
+categories = ["command-line-utilities"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/qryxip/sky-color-wallpaper"
 
