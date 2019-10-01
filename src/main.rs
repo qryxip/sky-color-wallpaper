@@ -125,10 +125,10 @@ struct Config {
 
 fn deser_longitude<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
     let val = f64::deserialize(deserializer)?;
-    if val.is_normal() && 0.0 <= val && val < 360.0 {
+    if val.is_normal() && -180.0 <= val && val <= 180.0 {
         Ok(val)
     } else {
-        Err(serde::de::Error::custom("expected [0, 360)"))
+        Err(serde::de::Error::custom("expected [-180, 180]"))
     }
 }
 

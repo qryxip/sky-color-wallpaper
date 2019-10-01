@@ -32,7 +32,6 @@ jobs:
             rust_target_triple: x86_64-pc-windows-gnu
             rust_host_triple: x86_64-pc-windows-gnu
             os: windows-2019
-            skip_run: true
           - rust_channel: stable
             rust_target_triple: x86_64-apple-darwin
             rust_host_triple: x86_64-apple-darwin
