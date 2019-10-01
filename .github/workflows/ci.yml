@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  schedule:
+    - cron: '0 0 * * 0'
   push:
     branches:
       - master
@@ -52,7 +54,24 @@ jobs:
 
       - name: apt-get install
         run: sudo apt-get install musl-tools
-        if: matrix.target_triple == 'x86_64-unknown-linux-musl'
+        if: matrix.rust_target_triple == 'x86_64-unknown-linux-musl'
+
+      - name: Build OpenSSL
+        run: |
+          sudo mkdir -p "$C_INCLUDE_PATH"
+          sudo ln -s /usr/include/linux "$C_INCLUDE_PATH/"
+          sudo ln -s /usr/include/x86_64-linux-gnu/asm "$C_INCLUDE_PATH/"
+          sudo ln -s /usr/include/asm-generic "$C_INCLUDE_PATH/"
+          OPENSSL_VERSION=1.0.2r
+          curl -sSf "https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz" | tar -xzC /tmp
+          cd "/tmp/openssl-$OPENSSL_VERSION"
+          ./Configure --prefix=/usr/local/openssl linux-x86_64
+          make
+          sudo make install
+        env:
+          CC: /usr/bin/musl-gcc
+          C_INCLUDE_PATH: /usr/local/musl/include
+        if: matrix.rust_target_triple == 'x86_64-unknown-linux-musl'
 
       - name: rustup-init
         run: |
@@ -67,7 +86,10 @@ jobs:
             rustup component add rustfmt
           else
             rustup target add ${{ matrix.rust_target_triple }}
-            echo 'export TARGET_TRIPLE=${{ matrix.rust_target_triple }}' >> /tmp/rc.bash
+            echo "export TARGET_TRIPLE='--target ${{ matrix.rust_target_triple }}'" >> /tmp/rc.bash
+            echo 'export PKG_CONFIG_ALLOW_CROSS=1' >> /tmp/rc.bash
+            echo 'export OPENSSL_DIR=/usr/local/openssl' >> /tmp/rc.bash
+            echo 'export OPENSSL_STATIC=1' >> /tmp/rc.bash
           fi
         shell: bash
 
@@ -149,3 +171,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         if: startsWith(github.ref, 'refs/tags/')
+
+  publish:
+    name: cargo pubish
+    runs-on: ubuntu-18.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: cargo publish
+        run: |
+          curl -sSf --tlsv1.2 --proto '=https' -o ./rustup-init https://sh.rustup.rs
+          bash ./rustup-init -y --no-modify-path
+          rm ./rustup-init
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup update
+          cargo publish --all-features --verbose --token "$CRATES_IO_TOKEN"
+        env:
+          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
