@@ -8,18 +8,15 @@ use geodate::sun_transit;
 use log::{debug, error, info, warn, LevelFilter};
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
-use serde::{Deserialize as _, Deserializer};
+use serde::Deserialize;
 use structopt::clap::Arg;
 use structopt::StructOpt;
 
 use std::convert::Infallible;
 use std::ffi::{OsStr, OsString};
-use std::fmt::Display;
-use std::fs::File;
-use std::iter::FromIterator;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
-use std::str::FromStr;
 use std::{env, io};
 
 fn main() {
@@ -105,55 +102,18 @@ impl Opt {
     }
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 struct Config {
-    #[serde(deserialize_with = "deser_longitude")]
+    #[serde(deserialize_with = "de::longitude")]
     longitude: f64,
-    #[serde(deserialize_with = "deser_latitude")]
+    #[serde(deserialize_with = "de::latitude")]
     latitude: f64,
-    #[serde(deserialize_with = "deser_str_seq_parsing")]
-    midnight: Vec<glob::Pattern>,
-    #[serde(deserialize_with = "deser_str_seq_parsing")]
-    morning: Vec<glob::Pattern>,
-    #[serde(deserialize_with = "deser_str_seq_parsing")]
-    early_afternoon: Vec<glob::Pattern>,
-    #[serde(deserialize_with = "deser_str_seq_parsing")]
-    late_afternoon: Vec<glob::Pattern>,
-    #[serde(deserialize_with = "deser_str_seq_parsing")]
-    evening: Vec<glob::Pattern>,
-}
-
-fn deser_longitude<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
-    let val = f64::deserialize(deserializer)?;
-    if val.is_normal() && -180.0 <= val && val <= 180.0 {
-        Ok(val)
-    } else {
-        Err(serde::de::Error::custom("expected [-180, 180]"))
-    }
-}
-
-fn deser_latitude<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
-    let val = f64::deserialize(deserializer)?;
-    if val.is_normal() && -90.0 <= val && val <= 90.0 {
-        Ok(val)
-    } else {
-        Err(serde::de::Error::custom("expected [-90, 90]"))
-    }
-}
-
-fn deser_str_seq_parsing<
-    'de,
-    D: Deserializer<'de>,
-    I: FromIterator<T>,
-    T: FromStr<Err = E>,
-    E: Display,
->(
-    deserializer: D,
-) -> Result<I, D::Error> {
-    Vec::<String>::deserialize(deserializer)?
-        .iter()
-        .map(|s| s.parse().map_err(serde::de::Error::custom))
-        .collect()
+    openweathermap: Option<Openweathermap>,
+    midnight: Vec<Patterns>,
+    morning: Vec<Patterns>,
+    early_afternoon: Vec<Patterns>,
+    late_afternoon: Vec<Patterns>,
+    evening: Vec<Patterns>,
 }
 
 impl Config {
@@ -191,7 +151,24 @@ impl Config {
         debug!("sunset   = {}", sunset);
         debug!("midnight = {}", midnight);
 
-        let patterns = if sunrise <= now && now < midday {
+        let weather = self
+            .openweathermap
+            .as_ref()
+            .map(|openweathermap| {
+                openweathermap::current_weather_data_by_city_id(
+                    openweathermap.city,
+                    &openweathermap.api_key()?,
+                )
+            })
+            .transpose()?;
+        if let Some(weather) = &weather {
+            info!("Current weather:");
+            for weather in weather.weather() {
+                info!("● {}", weather);
+            }
+        }
+
+        if sunrise <= now && now < midday {
             info!("It is morning");
             &self.morning
         } else if midday <= now && now < sunset - chrono::Duration::minutes(90) {
@@ -208,32 +185,51 @@ impl Config {
             &self.midnight
         }
         .iter()
-        .map(|pattern| {
-            let as_path = Path::new(pattern.as_str());
-            if as_path.iter().next() == Some(OsStr::new("~")) {
-                let mut acc =
-                    dirs::home_dir().ok_or_else(|| failure::err_msg("Home directory not found"))?;
-                as_path.iter().skip(1).for_each(|c| acc.push(c));
-                acc.to_str()
-                    .ok_or_else(|| failure::err_msg("The home directory is not valid UTF-8"))?
-                    .parse()
-                    .map_err(Into::into)
-            } else if as_path
-                .iter()
-                .next()
-                .map_or(false, |s| s.to_string_lossy().starts_with('~'))
-            {
-                Err(failure::err_msg(format!(
-                    "Unsupported use of '~': {}",
-                    as_path.display()
-                )))
-            } else {
-                Ok(pattern.clone())
-            }
+        .find(|Patterns { on, .. }| match (on, &weather) {
+            (Some(on), Some(weather)) => weather.matches(on),
+            (Some(_), None) => false,
+            (None, _) => true,
         })
-        .collect::<Fallible<Vec<_>>>()?;
+        .and_then(|p| p.choose())
+        .ok_or_else(|| failure::err_msg("No matches found"))
+    }
+}
 
-        let paths = patterns
+#[derive(Deserialize, Debug)]
+struct Openweathermap {
+    city: u64,
+    api_key: OpenweathermapApiKey,
+}
+
+impl Openweathermap {
+    fn api_key(&self) -> Fallible<String> {
+        let OpenweathermapApiKey::File { path } = &self.api_key;
+        let content = fs::read_to_string(path)
+            .with_context(|_| failure::err_msg(format!("Failed to read {}", path.display())))?;
+        Ok(content.trim().to_owned())
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "snake_case", tag = "type")]
+enum OpenweathermapApiKey {
+    File {
+        #[serde(deserialize_with = "de::path_expanding_user")]
+        path: PathBuf,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+struct Patterns {
+    on: Option<Vec<openweathermap::Cond>>,
+    #[serde(deserialize_with = "de::patterns_expanding_user")]
+    patterns: Vec<glob::Pattern>,
+}
+
+impl Patterns {
+    fn choose(&self) -> Option<String> {
+        let paths = self
+            .patterns
             .iter()
             .flat_map(|p| glob::glob(p.as_str()).unwrap())
             .flat_map(|entry| match entry {
@@ -256,10 +252,7 @@ impl Config {
             paths.len(),
             if paths.len() > 1 { "s" } else { "" },
         );
-        paths
-            .choose(&mut rand::thread_rng())
-            .map(Clone::clone)
-            .ok_or_else(|| failure::err_msg("No matches found"))
+        paths.choose(&mut rand::thread_rng()).map(Clone::clone)
     }
 }
 
@@ -291,4 +284,174 @@ fn set_wallpaper(path: &str) -> Fallible<()> {
         .with_context(|_| format!("Failed to set {}", path))?;
     info!("Successfully set");
     Ok(())
+}
+
+mod de {
+    use serde::{Deserialize as _, Deserializer};
+
+    use std::ffi::{OsStr, OsString};
+    use std::path::{Path, PathBuf};
+
+    pub(crate) fn longitude<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+        let val = f64::deserialize(deserializer)?;
+        if val.is_normal() && -180.0 <= val && val <= 180.0 {
+            Ok(val)
+        } else {
+            Err(serde::de::Error::custom("expected [-180, 180]"))
+        }
+    }
+
+    pub(crate) fn latitude<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+        let val = f64::deserialize(deserializer)?;
+        if val.is_normal() && -90.0 <= val && val <= 90.0 {
+            Ok(val)
+        } else {
+            Err(serde::de::Error::custom("expected [-90, 90]"))
+        }
+    }
+
+    pub(crate) fn path_expanding_user<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<PathBuf, D::Error> {
+        let s =
+            expand_user(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)?;
+        Ok(OsString::from(s).into())
+    }
+
+    pub(crate) fn patterns_expanding_user<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<glob::Pattern>, D::Error> {
+        Vec::<String>::deserialize(deserializer)?
+            .into_iter()
+            .map(expand_user)
+            .map(|r| r?.parse::<glob::Pattern>().map_err(|e| e.to_string()))
+            .collect::<Result<_, _>>()
+            .map_err(serde::de::Error::custom)
+    }
+
+    fn expand_user(path: String) -> Result<String, String> {
+        if Path::new(&path).iter().next() == Some(OsStr::new("~")) {
+            let mut acc = dirs::home_dir().ok_or_else(|| "Home directory not found".to_owned())?;
+            Path::new(&path).iter().skip(1).for_each(|c| acc.push(c));
+            OsString::from(acc)
+                .into_string()
+                .map_err(|_| "The home directory is not valid UTF-8".to_owned())
+        } else if Path::new(&path)
+            .iter()
+            .next()
+            .map_or(false, |s| s.to_string_lossy().starts_with('~'))
+        {
+            Err(format!("Unsupported use of '~': {}", path))
+        } else {
+            Ok(path)
+        }
+    }
+}
+
+mod openweathermap {
+    use failure::Fallible;
+    use itertools::Itertools as _;
+    use log::debug;
+    use serde::{Deserialize, Deserializer};
+    use strum::EnumVariantNames;
+    use url_1::Url;
+
+    use std::fmt::Display;
+
+    pub(crate) fn current_weather_data_by_city_id(
+        city_id: u64,
+        api_key: &str,
+    ) -> Fallible<CurrentWeatherDataByCityId> {
+        let client = reqwest::Client::builder().build()?;
+        let mut url = "https://api.openweathermap.org/data/2.5/weather"
+            .parse::<Url>()
+            .unwrap();
+        url.query_pairs_mut()
+            .append_pair("id", &city_id.to_string())
+            .append_pair("APPID", api_key);
+        debug!(
+            "GET: {}",
+            url.as_str()
+                .replace(api_key, &api_key.replace(|_| true, "█")),
+        );
+        let mut res = client.get(url).send()?;
+        debug!("{}", res.status());
+        res.json().map_err(Into::into)
+    }
+
+    #[derive(Debug)]
+    pub(crate) enum Cond {
+        Id(u64),
+        Main(WeatherMain),
+    }
+
+    impl<'de> Deserialize<'de> for Cond {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum Repr {
+                Id(u64),
+                Main(WeatherMain),
+                InvalidMain(String),
+            }
+
+            match Repr::deserialize(deserializer).map_err(|_| {
+                static MSG: &str = "expected unsigned 64-bit integer (ID) or string (Main)";
+                serde::de::Error::custom(MSG)
+            })? {
+                Repr::Id(id) => Ok(Self::Id(id)),
+                Repr::Main(main) => Ok(Self::Main(main)),
+                Repr::InvalidMain(main) => Err(serde::de::Error::custom(format!(
+                    "unknown variant `{}`, expected integer or one of {}",
+                    main,
+                    WeatherMain::variants()
+                        .iter()
+                        .format_with(", ", |s, f| f(&format_args!("`{}`", s))),
+                ))),
+            }
+        }
+    }
+
+    #[derive(Deserialize, Debug)]
+    pub(crate) struct CurrentWeatherDataByCityId {
+        weather: Vec<Weather>,
+    }
+
+    impl CurrentWeatherDataByCityId {
+        pub(crate) fn weather<'a>(&'a self) -> &[impl Display + 'a] {
+            &self.weather
+        }
+
+        pub(crate) fn matches(&self, conds: &[Cond]) -> bool {
+            self.weather.iter().any(|weather| {
+                conds.iter().any(|cond| match cond {
+                    Cond::Id(id) => weather.id == *id,
+                    Cond::Main(main) => weather.main == *main,
+                })
+            })
+        }
+    }
+
+    #[derive(Deserialize, Debug, derive_more::Display)]
+    #[display(fmt = "{:?} (id={})", description, id)]
+    struct Weather {
+        id: u64,
+        main: WeatherMain,
+        description: String,
+    }
+
+    // https://openweathermap.org/weather-conditions
+    #[derive(Deserialize, EnumVariantNames, Clone, Copy, PartialEq, Debug)]
+    pub(crate) enum WeatherMain {
+        Thunderstorm,
+        Dizzle,
+        Rain,
+        Snow,
+        Atomosphere,
+        Clear,
+        Clouds,
+    }
 }
