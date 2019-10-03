@@ -74,8 +74,8 @@ jobs:
 
       - name: rustup-init
         run: |
-          curl -sSf --tlsv1.2 --proto '=https' -o ./rustup-init https://sh.rustup.rs
-          bash ./rustup-init -y --no-modify-path --default-toolchain none
+          curl -sSf --tlsv1.2 --proto '=https' -o /tmp/rustup-init https://sh.rustup.rs
+          bash /tmp/rustup-init -y --no-modify-path --default-toolchain none
           echo 'export PATH="$HOME/.cargo/bin:$HOME/go/bin:$PATH"' > /tmp/rc.bash
           source /tmp/rc.bash
           rustup default ${{ matrix.rust_channel }}-${{ matrix.rust_host_triple }}
@@ -182,11 +182,9 @@ jobs:
 
       - name: cargo publish
         run: |
-          curl -sSf --tlsv1.2 --proto '=https' -o ./rustup-init https://sh.rustup.rs
-          bash ./rustup-init -y --no-modify-path
-          rm ./rustup-init
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup update
-          cargo publish --all-features --verbose --token "$CRATES_IO_TOKEN"
+          curl -sSf --tlsv1.2 --proto '=https' -o /tmp/rustup-init https://sh.rustup.rs
+          bash /tmp/rustup-init -y --no-modify-path
+          ~/.cargo/bin/rustup update
+          ~/.cargo/bin/cargo publish --all-features --verbose --token "$CRATES_IO_TOKEN"
         env:
           CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
