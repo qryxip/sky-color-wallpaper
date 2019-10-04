@@ -8,6 +8,7 @@ use geodate::sun_transit;
 use log::{debug, error, info, warn, LevelFilter};
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
+use regex::Regex;
 use serde::Deserialize;
 use structopt::clap::Arg;
 use structopt::StructOpt;
@@ -213,10 +214,21 @@ struct Openweathermap {
 
 impl Openweathermap {
     fn api_key(&self) -> Fallible<String> {
+        static API_KEY: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"\A\s*([0-9a-f]{32})\s*\z").unwrap());
+
         let OpenweathermapApiKey::File { path } = &self.api_key;
-        let content = fs::read_to_string(path)
-            .with_context(|_| failure::err_msg(format!("Failed to read {}", path.display())))?;
-        Ok(content.trim().to_owned())
+        fs::read_to_string(path)
+            .map_err(Into::into)
+            .and_then(|content| {
+                if let Some(caps) = API_KEY.captures(&content) {
+                    Ok(caps[1].to_owned())
+                } else {
+                    Err(failure::err_msg(r"Expected `\A\s*[0-9a-f]{32}\s*\z`"))
+                }
+            })
+            .with_context(|_| failure::err_msg(format!("Failed to read {}", path.display())))
+            .map_err(Into::into)
     }
 }
 

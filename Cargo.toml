@@ -12,6 +12,7 @@ repository = "https://github.com/qryxip/sky-color-wallpaper"
 
 [dependencies]
 chrono = "0.4.9"
+derive_more = "0.15.0"
 dirs = "2.0.2"
 env_logger_0_6 = { package = "env_logger", version = "0.6.2" }
 failure = "0.1.5"
@@ -22,11 +23,11 @@ log = "0.4.8"
 once_cell = "1.2.0"
 pretty_env_logger = "0.3.1"
 rand = "0.7.2"
+regex = "1.3.1"
 reqwest = { version = "0.9.21", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1.0.101", features = ["derive"] }
 serde_yaml = "0.8.9"
 structopt = "0.3.2"
 strum = { version = "0.16.0", features = ["derive"] }
-wallpaper = "2.0.1"
 url_1 = { package = "url", version = "1.7.2" }
-derive_more = "0.15.0"
+wallpaper = "2.0.1"
