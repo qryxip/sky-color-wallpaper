@@ -385,12 +385,15 @@ mod openweathermap {
             .append_pair("id", &city_id.to_string())
             .append_pair("APPID", api_key);
         debug!("GET: {}", hide(url.as_ref(), api_key));
-        let mut res = client
+        client
             .get(url)
             .send()
-            .map_err(|e| hide(&e.to_string(), api_key))?;
-        debug!("{}", res.status());
-        res.json().map_err(|e| hide(&e.to_string(), api_key))
+            .and_then(|res| {
+                debug!("{}", res.status());
+                res.error_for_status()
+            })
+            .and_then(|mut r| r.json())
+            .map_err(|e| hide(&e.to_string(), api_key))
     }
 
     #[derive(Debug)]
