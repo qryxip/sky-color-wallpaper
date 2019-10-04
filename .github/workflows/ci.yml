@@ -32,7 +32,7 @@ jobs:
 
       - name: rustup-init
         run: |
-          curl -sSf --tlsv1.2 --proto '=https' -o /tmp/rustup-init https://sh.rustup.rs
+          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
           bash /tmp/rustup-init -y --no-modify-path
           ~/.cargo/bin/rustup component add rustfmt
         shell: bash
@@ -61,13 +61,13 @@ jobs:
 
       - name: rustup-init
         run: |
-          curl -sSf --tlsv1.2 --proto '=https' -o /tmp/rustup-init https://sh.rustup.rs
+          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
           bash /tmp/rustup-init -y --no-modify-path
 
       - name: Download Tarpaulin
         run: |
           TARPAULIN_VERSION=0.9.0
-          curl -sSL "https://github.com/xd009642/tarpaulin/releases/download/$TARPAULIN_VERSION/cargo-tarpaulin-$TARPAULIN_VERSION-travis.tar.gz" |
+          curl -sSL "https://github.com/xd009642/tarpaulin/releases/download/$TARPAULIN_VERSION/cargo-tarpaulin-$TARPAULIN_VERSION-travis.tar.gz" --retry 10 |
             tar xz -C ~/.cargo/bin
 
       - name: Display versions
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload the report for codecov.io
         run: |
-          curl -sSo /tmp/codecov.bash https://codecov.io/bash
+          curl -sSo /tmp/codecov.bash https://codecov.io/bash --retry 10
           bash /tmp/codecov.bash
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -137,7 +137,7 @@ jobs:
           sudo ln -s /usr/include/x86_64-linux-gnu/asm "$C_INCLUDE_PATH/"
           sudo ln -s /usr/include/asm-generic "$C_INCLUDE_PATH/"
           OPENSSL_VERSION=1.0.2r
-          curl -sSf "https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz" | tar -xzC /tmp
+          curl -sS "https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz" --retry 10 | tar -xzC /tmp
           cd "/tmp/openssl-$OPENSSL_VERSION"
           ./Configure --prefix=/usr/local/openssl linux-x86_64
           make
@@ -149,7 +149,7 @@ jobs:
 
       - name: rustup-init
         run: |
-          curl -sSf --tlsv1.2 --proto '=https' -o /tmp/rustup-init https://sh.rustup.rs
+          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
           bash /tmp/rustup-init -y --no-modify-path --default-toolchain none
           echo 'export PATH="$HOME/.cargo/bin:$HOME/go/bin:$PATH"' > /tmp/rc.bash
           source /tmp/rc.bash
@@ -244,7 +244,7 @@ jobs:
 
       - name: cargo publish
         run: |
-          curl -sSf --tlsv1.2 --proto '=https' -o /tmp/rustup-init https://sh.rustup.rs
+          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
           bash /tmp/rustup-init -y --no-modify-path
           ~/.cargo/bin/rustup update
           ~/.cargo/bin/cargo publish --all-features --verbose --token "$CRATES_IO_TOKEN"
