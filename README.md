@@ -57,8 +57,6 @@ latitude: 35.6828
 
 # optional
 openweathermap:
-  # https://openweathermap.org/find
-  city: 1850144
   # https://openweathermap.org/users/sign_up
   api_key:
     type: file

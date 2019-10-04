@@ -158,8 +158,9 @@ impl Config {
             .map::<Fallible<_>, _>(|openweathermap| {
                 let api_key = openweathermap.api_key()?;
                 Ok(
-                    match openweathermap::current_weather_data_by_city_id(
-                        openweathermap.city,
+                    match openweathermap::current_weather_data_by_coordinates(
+                        self.longitude,
+                        self.latitude,
                         &api_key,
                     ) {
                         Ok(weather) => Some(weather),
@@ -208,7 +209,6 @@ impl Config {
 
 #[derive(Deserialize, Debug)]
 struct Openweathermap {
-    city: u64,
     api_key: OpenweathermapApiKey,
 }
 
@@ -379,10 +379,11 @@ mod openweathermap {
 
     use std::fmt::Display;
 
-    pub(crate) fn current_weather_data_by_city_id(
-        city_id: u64,
+    pub(crate) fn current_weather_data_by_coordinates(
+        lon: f64,
+        lat: f64,
         api_key: &str,
-    ) -> Result<CurrentWeatherDataByCityId, String> {
+    ) -> Result<CurrentWeatherData, String> {
         fn hide(s: &str, api_key: &str) -> String {
             s.replace(api_key, &api_key.replace(|_| true, "█"))
         }
@@ -394,7 +395,8 @@ mod openweathermap {
             .parse::<Url>()
             .unwrap();
         url.query_pairs_mut()
-            .append_pair("id", &city_id.to_string())
+            .append_pair("lon", &lon.to_string())
+            .append_pair("lat", &lat.to_string())
             .append_pair("APPID", api_key);
         debug!("GET: {}", hide(url.as_ref(), api_key));
         client
@@ -445,11 +447,11 @@ mod openweathermap {
     }
 
     #[derive(Deserialize, Debug)]
-    pub(crate) struct CurrentWeatherDataByCityId {
+    pub(crate) struct CurrentWeatherData {
         weather: Vec<Weather>,
     }
 
-    impl CurrentWeatherDataByCityId {
+    impl CurrentWeatherData {
         pub(crate) fn weather<'a>(&'a self) -> &[impl Display + 'a] {
             &self.weather
         }
