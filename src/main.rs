@@ -17,7 +17,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
-use std::{env, io};
+use std::{convert, env, io};
 
 fn main() {
     let opt = Opt::from_args();
@@ -154,17 +154,27 @@ impl Config {
         let weather = self
             .openweathermap
             .as_ref()
-            .map(|openweathermap| {
-                openweathermap::current_weather_data_by_city_id(
-                    openweathermap.city,
-                    &openweathermap.api_key()?,
+            .map::<Fallible<_>, _>(|openweathermap| {
+                let api_key = openweathermap.api_key()?;
+                Ok(
+                    match openweathermap::current_weather_data_by_city_id(
+                        openweathermap.city,
+                        &api_key,
+                    ) {
+                        Ok(weather) => Some(weather),
+                        Err(err) => {
+                            warn!("{}", err);
+                            None
+                        }
+                    },
                 )
             })
-            .transpose()?;
+            .transpose()?
+            .and_then(convert::identity);
         if let Some(weather) = &weather {
             info!("Current weather:");
             for weather in weather.weather() {
-                info!("● {}", weather);
+                info!("- {}", weather);
             }
         }
 
@@ -349,7 +359,6 @@ mod de {
 }
 
 mod openweathermap {
-    use failure::Fallible;
     use itertools::Itertools as _;
     use log::debug;
     use serde::{Deserialize, Deserializer};
@@ -361,22 +370,27 @@ mod openweathermap {
     pub(crate) fn current_weather_data_by_city_id(
         city_id: u64,
         api_key: &str,
-    ) -> Fallible<CurrentWeatherDataByCityId> {
-        let client = reqwest::Client::builder().build()?;
+    ) -> Result<CurrentWeatherDataByCityId, String> {
+        fn hide(s: &str, api_key: &str) -> String {
+            s.replace(api_key, &api_key.replace(|_| true, "█"))
+        }
+
+        let client = reqwest::Client::builder()
+            .build()
+            .map_err(|e| e.to_string())?;
         let mut url = "https://api.openweathermap.org/data/2.5/weather"
             .parse::<Url>()
             .unwrap();
         url.query_pairs_mut()
             .append_pair("id", &city_id.to_string())
             .append_pair("APPID", api_key);
-        debug!(
-            "GET: {}",
-            url.as_str()
-                .replace(api_key, &api_key.replace(|_| true, "█")),
-        );
-        let mut res = client.get(url).send()?;
+        debug!("GET: {}", hide(url.as_ref(), api_key));
+        let mut res = client
+            .get(url)
+            .send()
+            .map_err(|e| hide(&e.to_string(), api_key))?;
         debug!("{}", res.status());
-        res.json().map_err(Into::into)
+        res.json().map_err(|e| hide(&e.to_string(), api_key))
     }
 
     #[derive(Debug)]
