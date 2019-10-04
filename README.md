@@ -1,10 +1,10 @@
 # sky-color-wallpaper
 
 [![CI](https://github.com/qryxip/sky-color-wallpaper/workflows/CI/badge.svg)](https://github.com/qryxip/sky-color-wallpaper/actions?workflow=CI)
-![Maintenance](https://img.shields.io/maintenance/yes/2019)
+[![codecov](https://codecov.io/gh/qryxip/sky-color-wallpaper/branch/master/graph/badge.svg)](https://codecov.io/gh/qryxip/sky-color-wallpaper/branch/master)
+[![dependency status](https://deps.rs/repo/github/qryxip/sky-color-wallpaper/status.svg)](https://deps.rs/repo/github/qryxip/sky-color-wallpaper)
 [![Crates.io](https://img.shields.io/crates/v/sky-color-wallpaper)](https://crates.io/crates/sky-color-wallpaper)
 [![Crates.io](https://img.shields.io/crates/l/sky-color-wallpaper)](https://crates.io/crates/sky-color-wallpaper)
-[![dependency status](https://deps.rs/repo/github/qryxip/sky-color-wallpaper/status.svg)](https://deps.rs/repo/github/qryxip/sky-color-wallpaper)
 
 Set random wallpapers according to sky color.
 
