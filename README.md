@@ -52,8 +52,8 @@ First, put a `sky_color_wallpaper.yml` in the [config directory](https://docs.rs
 
 ```yaml
 ---
-longitude: 135.0
-latitude: 35.0
+longitude: 139.759
+latitude: 35.6828
 
 # optional
 openweathermap:
@@ -64,21 +64,53 @@ openweathermap:
     type: file
     path: ~/apikeys/openweathermap.txt
 
+_:
+  # https://openweathermap.org/weather-conditions
+  # integer (ID) or string (Main)
+  clouds: &clouds
+    - Atomosphere
+    - Clouds
+  rain: &rain
+    - Thunderstorm
+    - Dizzle
+    - Rain
+  snow: &snow
+    - Snow
+
 midnight:
   - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/midnight/*] # https://docs.rs/glob/0.3/glob/struct.Pattern.html
 morning:
-  # https://openweathermap.org/weather-conditions
-  - on: [Thunderstorm, Dizzle, Rain] # integer (ID) or string (Main)
+  - on: *clouds
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/clouds/*]
+  - on: *rain
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/rain/*]
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/any/*]
+  - on: *snow
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/snow/*]
+  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/clear/*]
 early_afternoon:
-  - on: [Thunderstorm, Dizzle, Rain]
+  - on: *clouds
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/clouds/*]
+  - on: *rain
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/rain/*]
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/any/*]
+  - on: *snow
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/snow/*]
+  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/clear/*]
 late_afternoon: # [sunset - 90min, sunset)
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/*]
+  - on: *clouds
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/clouds/*]
+  - on: *rain
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/rain/*]
+  - on: *snow
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/snow/*]
+  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/clear/*]
 evening:
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/*]
+  - on: *clouds
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/clouds/*]
+  - on: *rain
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/rain/*]
+  - on: *snow
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/snow/*]
+  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/clear/*]
 ```
 
 And run `sky-color-wallpaper`(`.exe`) at the startup.
