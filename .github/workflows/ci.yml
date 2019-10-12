@@ -12,162 +12,96 @@ on:
 
 jobs:
   rustfmt:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-2019
-          - ubuntu-18.04
-        include:
-          - os: windows-2019
-            rust_triple: x86_64-pc-windows-msvc
-          - os: ubuntu-18.04
-            rust_triple: x86_64-unknown-linux-gnu
-
-    name: Rustfmt (stable-${{ matrix.rust_triple }})
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v1
-
-      - name: rustup-init
-        run: |
-          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
-          bash /tmp/rustup-init -y --no-modify-path
-          ~/.cargo/bin/rustup component add rustfmt
-        shell: bash
-
-      - name: Display versions
-        run: |
-          ~/.cargo/bin/cargo -Vv
-          echo -e '\n'
-          ~/.cargo/bin/rustfmt -V
-        shell: bash
-
-      - name: cargo fmt -- --check
-        run: |
-          ~/.cargo/bin/cargo fmt --all -- --check
-        shell: bash
-
-  tarpaulin:
-    strategy:
-      fail-fast: false
-
-    name: Tarpaulin
+    name: Rustfmt
     runs-on: ubuntu-18.04
 
     steps:
-      - uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
 
-      - name: rustup-init
-        run: |
-          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
-          bash /tmp/rustup-init -y --no-modify-path
+      - name: Install toolchain and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable-x86_64-unknown-linux-gnu
+          default: true
 
-      - name: Download Tarpaulin
+      - name: Display component versions
         run: |
-          TARPAULIN_VERSION=0.9.0
-          curl -sSL "https://github.com/xd009642/tarpaulin/releases/download/$TARPAULIN_VERSION/cargo-tarpaulin-$TARPAULIN_VERSION-travis.tar.gz" --retry 10 |
-            tar xz -C ~/.cargo/bin
-
-      - name: Display versions
-        run: |
-          ~/.cargo/bin/cargo -Vv
+          rustup show
           echo -e '\n'
-          ~/.cargo/bin/cargo tarpaulin -V
+          rustc -Vv
+          echo -e '\n'
+          cargo -Vv
+          echo -e '\n'
+          rustfmt -V
 
-      - name: cargo tarpaulin
-        run: ~/.cargo/bin/cargo tarpaulin -vo Xml
-
-      - name: Upload the report for codecov.io
-        run: |
-          curl -sSo /tmp/codecov.bash https://codecov.io/bash --retry 10
-          bash /tmp/codecov.bash
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: cargo fmt -- --check
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
 
   build:
     strategy:
       fail-fast: false
       matrix:
-        rust_channel:
+        channel:
           - stable
-        rust_target_triple:
+        target_triple:
           - x86_64-pc-windows-msvc
           - x86_64-pc-windows-gnu
           - x86_64-apple-darwin
           - x86_64-unknown-linux-gnu
           - x86_64-unknown-linux-musl
         include:
-          - rust_channel: stable
-            rust_target_triple: x86_64-pc-windows-msvc
-            rust_host_triple: x86_64-pc-windows-msvc
+          - channel: stable
+            target_triple: x86_64-pc-windows-msvc
+            host_triple: x86_64-pc-windows-msvc
             os: windows-2019
-          - rust_channel: stable
-            rust_target_triple: x86_64-pc-windows-gnu
-            rust_host_triple: x86_64-pc-windows-gnu
+          - channel: stable
+            target_triple: x86_64-pc-windows-gnu
+            host_triple: x86_64-pc-windows-gnu
             os: windows-2019
-          - rust_channel: stable
-            rust_target_triple: x86_64-apple-darwin
-            rust_host_triple: x86_64-apple-darwin
+          - channel: stable
+            target_triple: x86_64-apple-darwin
+            host_triple: x86_64-apple-darwin
             os: macOS-10.14
-          - rust_channel: stable
-            rust_target_triple: x86_64-unknown-linux-gnu
-            rust_host_triple: x86_64-unknown-linux-gnu
+          - channel: stable
+            target_triple: x86_64-unknown-linux-gnu
+            host_triple: x86_64-unknown-linux-gnu
             os: ubuntu-18.04
-          - rust_channel: stable
-            rust_target_triple: x86_64-unknown-linux-musl
-            rust_host_triple: x86_64-unknown-linux-gnu
+          - channel: stable
+            target_triple: x86_64-unknown-linux-musl
+            host_triple: x86_64-unknown-linux-gnu
             os: ubuntu-18.04
 
-    name: ${{ matrix.rust_channel }}-${{ matrix.rust_target_triple }}
+    name: ${{ matrix.channel }}-${{ matrix.target_triple }}
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
 
       - name: apt-get install
         run: sudo apt-get install musl-tools
-        if: matrix.rust_target_triple == 'x86_64-unknown-linux-musl'
+        if: matrix.target_triple == 'x86_64-unknown-linux-musl'
 
       - name: Build OpenSSL
-        run: |
-          sudo mkdir -p "$C_INCLUDE_PATH"
-          sudo ln -s /usr/include/linux "$C_INCLUDE_PATH/"
-          sudo ln -s /usr/include/x86_64-linux-gnu/asm "$C_INCLUDE_PATH/"
-          sudo ln -s /usr/include/asm-generic "$C_INCLUDE_PATH/"
-          OPENSSL_VERSION=1.0.2r
-          curl -sS "https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz" --retry 10 | tar -xzC /tmp
-          cd "/tmp/openssl-$OPENSSL_VERSION"
-          ./Configure --prefix=/usr/local/openssl linux-x86_64
-          make
-          sudo make install
-        env:
-          CC: /usr/bin/musl-gcc
-          C_INCLUDE_PATH: /usr/local/musl/include
-        if: matrix.rust_target_triple == 'x86_64-unknown-linux-musl'
+        run: . ./ci/openssl.bash
+        if: matrix.target_triple == 'x86_64-unknown-linux-musl'
 
-      - name: rustup-init
-        run: |
-          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
-          bash /tmp/rustup-init -y --no-modify-path --default-toolchain none
-          echo 'export PATH="$HOME/.cargo/bin:$HOME/go/bin:$PATH"' > /tmp/rc.bash
-          source /tmp/rc.bash
-          rustup default ${{ matrix.rust_channel }}-${{ matrix.rust_host_triple }}
-          rustup update ${{ matrix.rust_channel }}-${{ matrix.rust_host_triple }}
-          rustup component add clippy
-          if ${{ matrix.rust_target_triple != matrix.rust_host_triple }}; then
-            rustup target add ${{ matrix.rust_target_triple }}
-            echo "export TARGET_TRIPLE='--target ${{ matrix.rust_target_triple }}'" >> /tmp/rc.bash
-            echo 'export PKG_CONFIG_ALLOW_CROSS=1' >> /tmp/rc.bash
-            echo 'export OPENSSL_DIR=/usr/local/openssl' >> /tmp/rc.bash
-            echo 'export OPENSSL_STATIC=1' >> /tmp/rc.bash
-          fi
-        shell: bash
+      - name: Install toolchain and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.channel }}-${{ matrix.host_triple }}
+          target: ${{ matrix.target_triple }}
+          default: true
 
-      - name: Display versions
+      - name: rustup component add clippy
+        run: rustup component add clippy
+
+      - name: Display component versions
         run: |
-          source /tmp/rc.bash
           rustup show
           echo -e '\n'
           rustc -Vv
@@ -175,51 +109,105 @@ jobs:
           cargo -Vv
           echo -e '\n'
           cargo clippy -V
-          echo -e '\n'
-          bash --version
         shell: bash
+
+      # - name: cargo clippy
+      #   run: |
+      #     # Avoid IRC
+      #     cargo check --all --all-targets --all-features --target ${{ matrix.target_triple }}
+      #     if ${{ matrix.os == 'windows-2019' }}; then
+      #       TO_UNIX_PATHS='xargs cygpath -u'
+      #     else
+      #       TO_UNIX_PATHS=cat
+      #     fi
+      #     cargo metadata --format-version 1 |
+      #       jq -r '.workspace_members[] as $members | .packages[] | select(.id == $members) | .targets[].src_path' |
+      #       $TO_UNIX_PATHS |
+      #       xargs touch
+      #     cargo clippy --all --all-targets --all-features --target ${{ matrix.target_triple }} -- -D warnings
+      #   shell: bash
 
       - name: cargo clippy
-        run: |
-          source /tmp/rc.bash
-          # A hack to avoid IRC
-          cargo check --all --all-targets --all-features $TARGET_TRIPLE
-          if ${{ matrix.os == 'windows-2019' }}; then
-            TO_UNIX_PATHS='xargs cygpath -u'
-          else
-            TO_UNIX_PATHS=cat
-          fi
-          cargo metadata --format-version 1 |
-            jq -r '.workspace_members[] as $members | .packages[] | select(.id == $members) | .targets[].src_path' |
-            $TO_UNIX_PATHS |
-            xargs touch
-          cargo clippy --all --all-targets --all-features $TARGET_TRIPLE -- -D warnings
-        shell: bash
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all --all-targets --all-features --target ${{ matrix.target_triple }} -- -D warnings
 
       - name: cargo test
-        run: |
-          source /tmp/rc.bash
-          cargo test --all --all-targets --all-features $TARGET_TRIPLE
-        shell: bash
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --all-targets --all-features --no-fail-fast --target ${{ matrix.target_triple }}
 
-      - name: Upload to GitHub Releases
+  release:
+    strategy:
+      fail-fast: true
+      matrix:
+        target_triple:
+          - x86_64-pc-windows-msvc
+          - x86_64-pc-windows-gnu
+          - x86_64-apple-darwin
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+        include:
+          - target_triple: x86_64-pc-windows-msvc
+            host_triple: x86_64-pc-windows-msvc
+            os: windows-2019
+          - target_triple: x86_64-pc-windows-gnu
+            host_triple: x86_64-pc-windows-gnu
+            os: windows-2019
+          - target_triple: x86_64-apple-darwin
+            host_triple: x86_64-apple-darwin
+            os: macOS-10.14
+          - target_triple: x86_64-unknown-linux-gnu
+            host_triple: x86_64-unknown-linux-gnu
+            os: ubuntu-18.04
+          - target_triple: x86_64-unknown-linux-musl
+            host_triple: x86_64-unknown-linux-gnu
+            os: ubuntu-18.04
+
+    name: GitHub Release (${{ matrix.target_triple }})
+    runs-on: ${{ matrix.os }}
+    needs: [rustfmt, build]
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: apt-get install
+        run: sudo apt-get install musl-tools
+        if: matrix.target_triple == 'x86_64-unknown-linux-musl'
+
+      - name: Build OpenSSL
+        run: . ./ci/openssl.bash
+        if: matrix.target_triple == 'x86_64-unknown-linux-musl'
+
+      - name: Install toolchain and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable-${{ matrix.host_triple }}
+          target: ${{ matrix.target_triple }}
+          default: true
+
+      - name: cargo build --release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --all-features --target ${{ matrix.target_triple }}
+
+      - name: Create an asset
+        id: asset
         run: |
-          source /tmp/rc.bash
-          if ${{ contains(matrix.rust_target_triple, 'pc-windows') }}; then
+          if ${{ contains(matrix.target_triple, 'pc-windows') }}; then
             EXE=.exe
           fi
-          if ${{ matrix.rust_target_triple == matrix.rust_host_triple }}; then
-            RELEASE_TARGET="./target/release/${GITHUB_REPOSITORY#*/}$EXE"
-          else
-            RELEASE_TARGET="./target/${{ matrix.rust_target_triple }}/release/${GITHUB_REPOSITORY#*/}$EXE"
-          fi
-          ASSET_STEM="${GITHUB_REPOSITORY#*/}-${GITHUB_REF#refs/tags/}-${{ matrix.rust_target_triple }}"
-          go get github.com/tcnksm/ghr
-          cargo build --release --all-features $TARGET_TRIPLE
+          EXECUTABLE="./target/${{ matrix.target_triple }}/release/${GITHUB_REPOSITORY#*/}$EXE"
+          ASSET_STEM="${GITHUB_REPOSITORY#*/}-${GITHUB_REF#refs/tags/}-${{ matrix.target_triple }}"
           git archive -o "./$ASSET_STEM.tar" --prefix "$ASSET_STEM/" HEAD
           tar -xf "./$ASSET_STEM.tar"
-          mv "$RELEASE_TARGET" "./$ASSET_STEM/"
-          if ${{ contains(matrix.rust_target_triple, 'pc-windows') }}; then
+          mv "$EXECUTABLE" "./$ASSET_STEM/"
+          if ${{ contains(matrix.target_triple, 'pc-windows') }}; then
             ASSET="./$ASSET_STEM.zip"
             7z a "$ASSET" "./$ASSET_STEM"
             zipinfo "$ASSET"
@@ -227,26 +215,33 @@ jobs:
             ASSET="./$ASSET_STEM.tar.gz"
             tar -czvf "$ASSET" "./$ASSET_STEM"
           fi
-          ghr "${GITHUB_REF#refs/tags/}" "$ASSET"
+          echo "::set-output name=asset::$ASSET"
+        shell: bash
+
+      - name: Upload
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.asset.outputs.asset }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        if: startsWith(github.ref, 'refs/tags/')
 
   publish:
     name: cargo pubish
     runs-on: ubuntu-18.04
-    needs: [rustfmt, tarpaulin, build]
+    needs: [rustfmt, build, release]
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - uses: actions/checkout@v1
 
+      - name: Install toolchain and target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable-x86_64-unknown-linux-gnu
+          default: true
+
       - name: cargo publish
-        run: |
-          curl -sSo /tmp/rustup-init --tlsv1.2 --proto '=https' --retry 10 https://sh.rustup.rs
-          bash /tmp/rustup-init -y --no-modify-path
-          ~/.cargo/bin/rustup update
-          ~/.cargo/bin/cargo publish --all-features --verbose --token "$CRATES_IO_TOKEN"
-        env:
-          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        uses: actions-rs/cargo@v1
+        with:
+          command: publish
+          args: --all-features --verbose --token ${{ secrets.CRATES_IO_TOKEN }}
