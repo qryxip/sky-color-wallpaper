@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed serialization of `Main` (`Atmosphere` → `Mist,`.., `Tornado`)
+
 ## [0.2.0] - 2019-10-04Z
 
 ### Added

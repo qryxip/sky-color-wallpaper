@@ -66,12 +66,20 @@ _:
   # https://openweathermap.org/weather-conditions
   # integer (ID) or string (Main)
   clouds: &clouds
-    - Atomosphere
+    - Mist
+    - Smoke
+    - Haze
+    - Dust
+    - Fog
+    - Sand
+    - Ash
     - Clouds
   rain: &rain
     - Thunderstorm
     - Dizzle
     - Rain
+    - Squall
+    - Tornado
   snow: &snow
     - Snow
 
