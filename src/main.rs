@@ -311,7 +311,7 @@ fn set_wallpaper(path: &str) -> Fallible<()> {
 mod de {
     use serde::{Deserialize as _, Deserializer};
 
-    use std::ffi::{OsStr, OsString};
+    use std::ffi::OsString;
     use std::path::{Path, PathBuf};
 
     pub(crate) fn longitude<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
@@ -335,8 +335,8 @@ mod de {
     pub(crate) fn path_expanding_user<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<PathBuf, D::Error> {
-        let s =
-            expand_user(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)?;
+        let s = String::deserialize(deserializer)?;
+        let s = expand_user(&s).map_err(serde::de::Error::custom)?;
         Ok(OsString::from(s).into())
     }
 
@@ -345,27 +345,92 @@ mod de {
     ) -> Result<Vec<glob::Pattern>, D::Error> {
         Vec::<String>::deserialize(deserializer)?
             .into_iter()
-            .map(expand_user)
+            .map(|s| expand_user(&s))
             .map(|r| r?.parse::<glob::Pattern>().map_err(|e| e.to_string()))
             .collect::<Result<_, _>>()
             .map_err(serde::de::Error::custom)
     }
 
-    fn expand_user(path: String) -> Result<String, String> {
-        if Path::new(&path).iter().next() == Some(OsStr::new("~")) {
-            let mut acc = dirs::home_dir().ok_or_else(|| "Home directory not found".to_owned())?;
-            Path::new(&path).iter().skip(1).for_each(|c| acc.push(c));
-            OsString::from(acc)
+    fn expand_user(path: &str) -> Result<String, String> {
+        expand_user_with(path, &home_dir()?)
+    }
+
+    fn expand_user_with(path: &str, home: &str) -> Result<String, String> {
+        fn fold_unwrap(head: &str, tail: &Path) -> String {
+            tail.iter()
+                .fold(PathBuf::from(head), |p, s| p.join(s))
+                .into_os_string()
                 .into_string()
-                .map_err(|_| "The home directory is not valid UTF-8".to_owned())
-        } else if Path::new(&path)
-            .iter()
-            .next()
-            .map_or(false, |s| s.to_string_lossy().starts_with('~'))
-        {
-            Err(format!("Unsupported use of '~': {}", path))
+                .unwrap()
+        }
+
+        if let Ok(tail) = Path::new(path).strip_prefix("~") {
+            Ok(fold_unwrap(home, tail))
+        } else if path.starts_with('~') {
+            Err(format!("Unsupported use of '~': {:?}", path))
         } else {
-            Ok(path)
+            Ok(fold_unwrap("", Path::new(path)))
+        }
+    }
+
+    fn home_dir() -> Result<String, String> {
+        dirs::home_dir()
+            .ok_or_else(|| "Home directory not found".to_owned())?
+            .into_os_string()
+            .into_string()
+            .map_err(|h| format!("The home directory is not valid UTF-8: {:?}", h))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::path::{self, Path};
+
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[test]
+        fn test_expand_user_with() {
+            debug_assert_eq!(path::MAIN_SEPARATOR, '/');
+            debug_assert!(Path::new("/").is_absolute());
+
+            assert_eq!(
+                super::expand_user_with("foo/bar", "/home/user"),
+                Ok("foo/bar".to_owned()),
+            );
+            assert_eq!(
+                super::expand_user_with("/foo/bar", "/home/user"),
+                Ok("/foo/bar".to_owned()),
+            );
+            assert_eq!(
+                super::expand_user_with("~/foo/bar", "/home/user"),
+                Ok("/home/user/foo/bar".to_owned()),
+            );
+            assert_eq!(
+                super::expand_user_with("~user/foo", "/home/user"),
+                Err(r#"Unsupported use of '~': "~user/foo""#.to_owned()),
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn test_expand_user_with() {
+            debug_assert_eq!(path::MAIN_SEPARATOR, '\\');
+            debug_assert!(Path::new("\\").is_relative());
+
+            assert_eq!(
+                super::expand_user_with("foo/bar", r"C:\Users\user"),
+                Ok(r"foo\bar".to_owned()),
+            );
+            assert_eq!(
+                super::expand_user_with("/foo/bar", r"C:\Users\user"),
+                Ok(r"\foo\bar".to_owned()),
+            );
+            assert_eq!(
+                super::expand_user_with("~/foo/bar", r"C:\Users\user"),
+                Ok(r"C:\Users\user\foo\bar".to_owned()),
+            );
+            assert_eq!(
+                super::expand_user_with("~user/foo", r"C:\Users\user"),
+                Err(r#"Unsupported use of '~': "~user/foo""#.to_owned()),
+            );
         }
     }
 }
