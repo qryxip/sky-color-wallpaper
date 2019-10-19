@@ -11,11 +11,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/qryxip/sky-color-wallpaper"
 
 [dependencies]
+anyhow = "1.0.14"
 chrono = "0.4.9"
 derive_more = "0.15.0"
 dirs = "2.0.2"
 env_logger_0_6 = { package = "env_logger", version = "0.6.2" }
-failure = "0.1.6"
 geodate = "0.3.0"
 glob = "0.3.0"
 itertools = "0.8.0"
