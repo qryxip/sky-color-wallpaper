@@ -1,9 +1,9 @@
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 compile_error!("unsupported platform");
 
+use anyhow::{anyhow, Context as _};
 use chrono::{Local, TimeZone as _};
 use env_logger_0_6::fmt::WriteStyle;
-use failure::{Fallible, ResultExt as _};
 use geodate::sun_transit;
 use log::{debug, error, info, warn, LevelFilter};
 use once_cell::sync::Lazy;
@@ -27,24 +27,8 @@ fn main() {
         .write_style(opt.color)
         .init();
     if let Err(err) = opt.run() {
-        let msg = err.to_string();
-        for line in msg.lines() {
+        for line in format!("Error: {:?}", err).lines() {
             error!("{}", line);
-        }
-        if msg.ends_with('\n') {
-            error!("");
-        }
-        for err in err.as_fail().iter_causes() {
-            let msg = err.to_string();
-            for (i, line) in msg.lines().enumerate() {
-                match i {
-                    0 => error!("Caused by: {}", line),
-                    _ => error!("           {}", line),
-                }
-            }
-            if msg.ends_with('\n') {
-                error!("");
-            }
         }
         process::exit(1);
     }
@@ -98,7 +82,7 @@ fn parse_write_style(s: &str) -> Result<WriteStyle, Infallible> {
 }
 
 impl Opt {
-    fn run(&self) -> Fallible<()> {
+    fn run(&self) -> anyhow::Result<()> {
         set_wallpaper(&Config::load(&self.config)?.choose()?)
     }
 }
@@ -118,14 +102,16 @@ struct Config {
 }
 
 impl Config {
-    fn load(path: &Path) -> Fallible<Self> {
-        info!("Loading {}", path.display());
-        serde_yaml::from_reader(File::open(path)?)
-            .with_context(|_| failure::err_msg(format!("Failed to read {}", path.display())))
-            .map_err(Into::into)
+    fn load(path: &Path) -> anyhow::Result<Self> {
+        let this = File::open(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|file| serde_yaml::from_reader(file).map_err(Into::into))
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+        info!("Loaded {}", path.display());
+        Ok(this)
     }
 
-    fn choose(&self) -> Fallible<String> {
+    fn choose(&self) -> anyhow::Result<String> {
         let now = Local::now();
         let today_beginning = now.date().and_hms(0, 0, 0).timestamp();
 
@@ -155,7 +141,7 @@ impl Config {
         let weather = self
             .openweathermap
             .as_ref()
-            .map::<Fallible<_>, _>(|openweathermap| {
+            .map::<anyhow::Result<_>, _>(|openweathermap| {
                 let api_key = openweathermap.api_key()?;
                 Ok(
                     match openweathermap::current_weather_data_by_coordinates(
@@ -203,7 +189,7 @@ impl Config {
             (None, _) => true,
         })
         .and_then(|p| p.choose())
-        .ok_or_else(|| failure::err_msg("No matches found"))
+        .ok_or_else(|| anyhow!("No matches found"))
     }
 }
 
@@ -213,7 +199,7 @@ struct Openweathermap {
 }
 
 impl Openweathermap {
-    fn api_key(&self) -> Fallible<String> {
+    fn api_key(&self) -> anyhow::Result<String> {
         static API_KEY: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"\A\s*([0-9a-f]{32})\s*\z").unwrap());
 
@@ -224,11 +210,10 @@ impl Openweathermap {
                 if let Some(caps) = API_KEY.captures(&content) {
                     Ok(caps[1].to_owned())
                 } else {
-                    Err(failure::err_msg(r"Expected `\A\s*[0-9a-f]{32}\s*\z`"))
+                    Err(anyhow!(r"Expected `\A\s*[0-9a-f]{32}\s*\z`"))
                 }
             })
-            .with_context(|_| failure::err_msg(format!("Failed to read {}", path.display())))
-            .map_err(Into::into)
+            .with_context(|| format!("Failed to read {}", path.display()))
     }
 }
 
@@ -278,7 +263,7 @@ impl Patterns {
     }
 }
 
-fn set_wallpaper(path: &str) -> Fallible<()> {
+fn set_wallpaper(path: &str) -> anyhow::Result<()> {
     fn pidof(program: &str) -> io::Result<bool> {
         Command::new("/usr/bin/pidof")
             .arg(program)
@@ -302,8 +287,8 @@ fn set_wallpaper(path: &str) -> Fallible<()> {
         env::set_var("XDG_CURRENT_DESKTOP", "i3");
     }
     wallpaper::set_from_path(path)
-        .map_err(|e| failure::err_msg(e.to_string()))
-        .with_context(|_| format!("Failed to set {}", path))?;
+        .map_err(|e| anyhow!("{}", e))
+        .with_context(|| format!("Failed to set {}", path))?;
     info!("Successfully set");
     Ok(())
 }
