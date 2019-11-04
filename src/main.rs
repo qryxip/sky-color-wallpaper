@@ -18,7 +18,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
-use std::{convert, env, io};
+use std::{env, io};
 
 fn main() {
     let opt = Opt::from_args();
@@ -143,30 +143,27 @@ impl Config {
             .as_ref()
             .map::<anyhow::Result<_>, _>(|openweathermap| {
                 let api_key = openweathermap.api_key()?;
-                Ok(
-                    match openweathermap::current_weather_data_by_coordinates(
-                        self.longitude,
-                        self.latitude,
-                        &api_key,
-                    ) {
-                        Ok(weather) => Some(weather),
-                        Err(err) => {
-                            warn!("{}", err);
-                            None
-                        }
-                    },
+                Ok(openweathermap::current_weather_data_by_coordinates(
+                    self.longitude,
+                    self.latitude,
+                    &api_key,
                 )
+                .map(|weather| {
+                    info!("Current weather:");
+                    for weather in weather.weather() {
+                        info!("- {}", weather);
+                    }
+                    weather
+                })
+                .unwrap_or_else(|warning| {
+                    warn!("{}", warning);
+                    warn!("Using \"clear sky\" (id=800)");
+                    openweathermap::CurrentWeatherData::default()
+                }))
             })
-            .transpose()?
-            .and_then(convert::identity);
-        if let Some(weather) = &weather {
-            info!("Current weather:");
-            for weather in weather.weather() {
-                info!("- {}", weather);
-            }
-        }
+            .transpose()?;
 
-        if sunrise <= now && now < midday {
+        let paths = if sunrise <= now && now < midday {
             info!("It is morning");
             &self.morning
         } else if midday <= now && now < sunset - chrono::Duration::minutes(90) {
@@ -183,13 +180,39 @@ impl Config {
             &self.midnight
         }
         .iter()
-        .find(|Patterns { on, .. }| match (on, &weather) {
+        .filter(|Patterns { on, .. }| match (on, &weather) {
             (Some(on), Some(weather)) => weather.matches(on),
             (Some(_), None) => false,
             (None, _) => true,
         })
-        .and_then(|p| p.choose())
-        .ok_or_else(|| anyhow!("No matches found"))
+        .flat_map(|Patterns { patterns, .. }| patterns)
+        .flat_map(|p| glob::glob(p.as_str()).unwrap())
+        .flat_map(|entry| match entry {
+            Ok(path) => {
+                if path.is_file() && path.to_str().is_some() {
+                    Some(OsString::from(path).into_string().unwrap())
+                } else {
+                    warn!("Ignoring {}", path.display());
+                    None
+                }
+            }
+            Err(err) => {
+                warn!("{}", err);
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+        info!(
+            "{} file{} matched",
+            paths.len(),
+            if paths.len() > 1 { "s" } else { "" },
+        );
+
+        paths
+            .choose(&mut rand::thread_rng())
+            .map(Clone::clone)
+            .ok_or_else(|| anyhow!("No matches found"))
     }
 }
 
@@ -231,36 +254,6 @@ struct Patterns {
     on: Option<Vec<openweathermap::Cond>>,
     #[serde(deserialize_with = "de::patterns_expanding_user")]
     patterns: Vec<glob::Pattern>,
-}
-
-impl Patterns {
-    fn choose(&self) -> Option<String> {
-        let paths = self
-            .patterns
-            .iter()
-            .flat_map(|p| glob::glob(p.as_str()).unwrap())
-            .flat_map(|entry| match entry {
-                Ok(path) => {
-                    if path.is_file() && path.to_str().is_some() {
-                        Some(OsString::from(path).into_string().unwrap())
-                    } else {
-                        warn!("Ignoring {}", path.display());
-                        None
-                    }
-                }
-                Err(err) => {
-                    warn!("{}", err);
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        info!(
-            "{} file{} matched",
-            paths.len(),
-            if paths.len() > 1 { "s" } else { "" },
-        );
-        paths.choose(&mut rand::thread_rng()).map(Clone::clone)
-    }
 }
 
 fn set_wallpaper(path: &str) -> anyhow::Result<()> {
@@ -513,6 +506,18 @@ mod openweathermap {
                     Cond::Main(main) => weather.main == *main,
                 })
             })
+        }
+    }
+
+    impl Default for CurrentWeatherData {
+        fn default() -> Self {
+            Self {
+                weather: vec![Weather {
+                    id: 800,
+                    main: WeatherMain::Clear,
+                    description: "clear sky (default value from sky-color-wallpaper)".to_owned(),
+                }],
+            }
         }
     }
 

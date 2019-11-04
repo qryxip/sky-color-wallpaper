@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Now uses "clear sky" to choose files when it fails to get weather.
+
 ## [0.2.1] - 2019-10-12Z
 
 ### Fixed
