@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
 use regex::Regex;
 use serde::Deserialize;
-use structopt::clap::Arg;
+use structopt::clap::{AppSettings, Arg};
 use structopt::StructOpt;
 
 use std::convert::Infallible;
@@ -35,13 +35,12 @@ fn main() {
 }
 
 #[derive(StructOpt)]
-#[structopt(author, about)]
+#[structopt(author, about, setting(AppSettings::DeriveDisplayOrder))]
 struct Opt {
     #[structopt(
         long,
         value_name("PATH"),
         default_config_path(),
-        display_order(1),
         help("Path to the config")
     )]
     config: PathBuf,
@@ -51,7 +50,6 @@ struct Opt {
         default_value = "auto",
         possible_values(&["always", "auto", "never"]),
         parse(try_from_str = parse_write_style),
-        display_order(2),
         help("Coloring")
     )]
     color: WriteStyle,
