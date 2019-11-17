@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Replaced [`pretty_env_logger`](https://crates.io/crates/pretty_env_logger) with [`tracing-subscriber`](https://crates.io/crates/tracing-subscriber).
+
 ## [0.3.0] - 2019-11-05Z
 
 - Now uses "clear sky" to choose files when it fails to get weather.
