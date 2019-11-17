@@ -2,18 +2,18 @@
 compile_error!("unsupported platform");
 
 use anyhow::{anyhow, Context as _};
-use chrono::{Local, TimeZone as _};
-use env_logger_0_6::fmt::WriteStyle;
+use chrono::{DateTime, Local, TimeZone as _};
 use geodate::sun_transit;
-use log::{debug, error, info, warn, LevelFilter};
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
 use regex::Regex;
 use serde::Deserialize;
 use structopt::clap::{AppSettings, Arg};
 use structopt::StructOpt;
+use strum::{EnumString, EnumVariantNames, IntoStaticStr};
+use tracing::{error, info, warn, Level};
+use tracing_subscriber::FmtSubscriber;
 
-use std::convert::Infallible;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -22,9 +22,10 @@ use std::{env, io};
 
 fn main() {
     let opt = Opt::from_args();
-    pretty_env_logger::formatted_timed_builder()
-        .filter(Some("sky_color_wallpaper"), LevelFilter::Debug)
-        .write_style(opt.color)
+    FmtSubscriber::builder()
+        .with_ansi(opt.color.should_enable_ansi_for_stderr())
+        .with_max_level(Level::INFO)
+        .with_writer(io::stderr)
         .init();
     if let Err(err) = opt.run() {
         for line in format!("Error: {:?}", err).lines() {
@@ -47,12 +48,11 @@ struct Opt {
     #[structopt(
         long,
         value_name("WHEN"),
-        default_value = "auto",
-        possible_values(&["always", "auto", "never"]),
-        parse(try_from_str = parse_write_style),
+        default_value("auto"),
+        possible_values(&["auto", "never", "always"]),
         help("Coloring")
     )]
-    color: WriteStyle,
+    color: ColorChoice,
 }
 
 trait ArgExt: Sized {
@@ -70,12 +70,47 @@ impl ArgExt for Arg<'static, 'static> {
     }
 }
 
-fn parse_write_style(s: &str) -> Result<WriteStyle, Infallible> {
-    match s {
-        "auto" => Ok(WriteStyle::Auto),
-        "always" => Ok(WriteStyle::Always),
-        "never" => Ok(WriteStyle::Never),
-        _ => panic!(r#"expected {{"auto", "always", "never"}}"#),
+#[derive(Debug, EnumString, IntoStaticStr, EnumVariantNames, Clone, Copy)]
+#[strum(serialize_all = "kebab_case")]
+enum ColorChoice {
+    Auto,
+    Never,
+    Always,
+}
+
+impl ColorChoice {
+    fn should_enable_ansi_for_stderr(self) -> bool {
+        #[cfg(not(windows))]
+        fn on_auto() -> bool {
+            atty::is(atty::Stream::Stderr) && env::var("TERM").ok().map_or(false, |v| v != "dumb")
+        }
+
+        #[cfg(windows)]
+        fn on_auto() -> bool {
+            use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            use winapi_util::HandleRef;
+
+            use std::ops::Deref;
+
+            let term = env::var("TERM");
+            let term = term.as_ref().map(Deref::deref);
+            if term == Ok("dumb") || term == Ok("cygwin") {
+                false
+            } else if env::var_os("MSYSTEM").is_some() && term.is_ok() {
+                atty::is(atty::Stream::Stderr)
+            } else {
+                atty::is(atty::Stream::Stderr)
+                    && winapi_util::console::mode(HandleRef::stderr())
+                        .ok()
+                        .map_or(false, |m| m & ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0)
+            }
+        }
+
+        match self {
+            Self::Auto => on_auto(),
+            Self::Never => false,
+            Self::Always => true,
+        }
     }
 }
 
@@ -110,58 +145,80 @@ impl Config {
     }
 
     fn choose(&self) -> anyhow::Result<String> {
+        fn todays_events(
+            today_beginning: i64,
+            lon: f64,
+            lat: f64,
+        ) -> (
+            DateTime<Local>,
+            DateTime<Local>,
+            DateTime<Local>,
+            DateTime<Local>,
+        ) {
+            let sunrise = sun_transit::get_sunrise(today_beginning, lon, lat)
+                .unwrap_or_else(|| unimplemented!());
+            let sunrise = Local.timestamp(sunrise, 0);
+
+            let midday = sun_transit::get_midday(today_beginning, lon);
+            let midday = Local.timestamp(midday, 0);
+
+            let sunset = sun_transit::get_sunset(today_beginning, lon, lat)
+                .unwrap_or_else(|| unimplemented!());
+            let sunset = Local.timestamp(sunset, 0);
+
+            let midnight = sun_transit::get_midnight(today_beginning, lon);
+            let midnight = if midnight < today_beginning {
+                Local.timestamp(midnight, 0) + chrono::Duration::days(1)
+            } else {
+                Local.timestamp(today_beginning, 0) + chrono::Duration::days(1)
+            };
+
+            info!("sunrise  = {}", sunrise);
+            info!("midday   = {}", midday);
+            info!("sunset   = {}", sunset);
+            info!("midnight = {}", midnight);
+
+            (sunrise, midday, sunset, midnight)
+        }
+
         let now = Local::now();
         let today_beginning = now.date().and_hms(0, 0, 0).timestamp();
 
-        let sunrise = sun_transit::get_sunrise(today_beginning, self.longitude, self.latitude)
-            .unwrap_or_else(|| unimplemented!());
-        let sunrise = Local.timestamp(sunrise, 0);
-
-        let midday = sun_transit::get_midday(today_beginning, self.longitude);
-        let midday = Local.timestamp(midday, 0);
-
-        let sunset = sun_transit::get_sunset(today_beginning, self.longitude, self.latitude)
-            .unwrap_or_else(|| unimplemented!());
-        let sunset = Local.timestamp(sunset, 0);
-
-        let midnight = sun_transit::get_midnight(today_beginning, self.longitude);
-        let midnight = if midnight < today_beginning {
-            Local.timestamp(midnight, 0) + chrono::Duration::days(1)
-        } else {
-            Local.timestamp(today_beginning, 0) + chrono::Duration::days(1)
-        };
-
-        debug!("sunrise  = {}", sunrise);
-        debug!("midday   = {}", midday);
-        debug!("sunset   = {}", sunset);
-        debug!("midnight = {}", midnight);
+        let events = todays_events(today_beginning, self.longitude, self.latitude);
 
         let weather = self
             .openweathermap
             .as_ref()
-            .map::<anyhow::Result<_>, _>(|openweathermap| {
-                let api_key = openweathermap.api_key()?;
-                Ok(openweathermap::current_weather_data_by_coordinates(
-                    self.longitude,
-                    self.latitude,
-                    &api_key,
-                )
-                .map(|weather| {
-                    info!("Current weather:");
-                    for weather in weather.weather() {
-                        info!("- {}", weather);
-                    }
-                    weather
-                })
-                .unwrap_or_else(|warning| {
-                    warn!("{}", warning);
-                    warn!("Using \"clear sky\" (id=800)");
-                    openweathermap::CurrentWeatherData::default()
-                }))
-            })
+            .map(|o| o.weather_data(self.longitude, self.latitude))
             .transpose()?;
 
-        let paths = if sunrise <= now && now < midday {
+        let paths = self.paths(now, events, weather.as_ref());
+
+        info!(
+            "{} file{} matched",
+            paths.len(),
+            if paths.len() > 1 { "s" } else { "" },
+        );
+
+        paths
+            .choose(&mut rand::thread_rng())
+            .map(Clone::clone)
+            .ok_or_else(|| anyhow!("No matches found"))
+    }
+
+    fn paths(
+        &self,
+        now: DateTime<Local>,
+        events: (
+            DateTime<Local>,
+            DateTime<Local>,
+            DateTime<Local>,
+            DateTime<Local>,
+        ),
+        weather: Option<&openweathermap::CurrentWeatherData>,
+    ) -> Vec<String> {
+        let (sunrise, midday, sunset, midnight) = events;
+        if sunrise <= now && now < midday {
             info!("It is morning");
             &self.morning
         } else if midday <= now && now < sunset - chrono::Duration::minutes(90) {
@@ -199,18 +256,7 @@ impl Config {
                 None
             }
         })
-        .collect::<Vec<_>>();
-
-        info!(
-            "{} file{} matched",
-            paths.len(),
-            if paths.len() > 1 { "s" } else { "" },
-        );
-
-        paths
-            .choose(&mut rand::thread_rng())
-            .map(Clone::clone)
-            .ok_or_else(|| anyhow!("No matches found"))
+        .collect()
     }
 }
 
@@ -220,12 +266,16 @@ struct Openweathermap {
 }
 
 impl Openweathermap {
-    fn api_key(&self) -> anyhow::Result<String> {
+    fn weather_data(
+        &self,
+        lon: f64,
+        lat: f64,
+    ) -> anyhow::Result<openweathermap::CurrentWeatherData> {
         static API_KEY: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"\A\s*([0-9a-f]{32})\s*\z").unwrap());
 
         let OpenweathermapApiKey::File { path } = &self.api_key;
-        fs::read_to_string(path)
+        let api_key = fs::read_to_string(path)
             .map_err(Into::into)
             .and_then(|content| {
                 if let Some(caps) = API_KEY.captures(&content) {
@@ -234,7 +284,23 @@ impl Openweathermap {
                     Err(anyhow!(r"Expected `\A\s*[0-9a-f]{32}\s*\z`"))
                 }
             })
-            .with_context(|| format!("Failed to read {}", path.display()))
+            .with_context(|| format!("Failed to read {}", path.display()))?;
+
+        Ok(
+            openweathermap::current_weather_data_by_coordinates(lon, lat, &api_key)
+                .map(|weather| {
+                    info!("Current weather:");
+                    for weather in weather.weather() {
+                        info!("- {}", weather);
+                    }
+                    weather
+                })
+                .unwrap_or_else(|warning| {
+                    warn!("{}", warning);
+                    warn!("Using \"clear sky\" (id=800)");
+                    openweathermap::CurrentWeatherData::default()
+                }),
+        )
     }
 }
 
@@ -413,9 +479,9 @@ mod de {
 
 mod openweathermap {
     use itertools::Itertools as _;
-    use log::debug;
     use serde::{Deserialize, Deserializer};
     use strum::EnumVariantNames;
+    use tracing::info;
     use url_1::Url;
 
     use std::fmt::Display;
@@ -439,12 +505,12 @@ mod openweathermap {
             .append_pair("lon", &lon.to_string())
             .append_pair("lat", &lat.to_string())
             .append_pair("APPID", api_key);
-        debug!("GET: {}", hide(url.as_ref(), api_key));
+        info!("GET: {}", hide(url.as_ref(), api_key));
         client
             .get(url)
             .send()
             .and_then(|res| {
-                debug!("{}", res.status());
+                info!("{}", res.status());
                 res.error_for_status()
             })
             .and_then(|mut r| r.json())
