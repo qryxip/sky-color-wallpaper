@@ -57,6 +57,7 @@ latitude: 35.6828
 
 # optional
 openweathermap:
+  default: Clear
   # https://openweathermap.org/users/sign_up
   api_key:
     type: file
@@ -82,6 +83,8 @@ _:
     - Tornado
   snow: &snow
     - Snow
+  clear: &clear
+    - Clear
 
 midnight:
   - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/midnight/*] # https://docs.rs/glob/0.3/glob/struct.Pattern.html
@@ -92,7 +95,8 @@ morning:
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/rain/*]
   - on: *snow
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/snow/*]
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/clear/*]
+  - on: *clear
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/morning/clear/*]
 early_afternoon:
   - on: *clouds
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/clouds/*]
@@ -100,7 +104,8 @@ early_afternoon:
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/rain/*]
   - on: *snow
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/snow/*]
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/clear/*]
+  - on: *clear
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/early_afternoon/clear/*]
 late_afternoon: # [sunset - 90min, sunset)
   - on: *clouds
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/clouds/*]
@@ -108,7 +113,8 @@ late_afternoon: # [sunset - 90min, sunset)
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/rain/*]
   - on: *snow
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/snow/*]
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/clear/*]
+  - on: *clear
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/late_afternoon/clear/*]
 evening:
   - on: *clouds
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/clouds/*]
@@ -116,7 +122,8 @@ evening:
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/rain/*]
   - on: *snow
     patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/snow/*]
-  - patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/clear/*]
+  - on: *clear
+    patterns: [~/Pictures/wallpapers/sky_color_wallpaper/evening/clear/*]
 ```
 
 And run `sky-color-wallpaper`(`.exe`) at the startup.
