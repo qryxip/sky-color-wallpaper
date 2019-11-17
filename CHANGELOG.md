@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.1] - 2019-11-17Z
 
 - Replaced [`pretty_env_logger`](https://crates.io/crates/pretty_env_logger) with [`tracing-subscriber`](https://crates.io/crates/tracing-subscriber).
 
