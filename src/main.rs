@@ -281,7 +281,7 @@ impl Openweathermap {
                 if let Some(caps) = API_KEY.captures(&content) {
                     Ok(caps[1].to_owned())
                 } else {
-                    Err(anyhow!(r"Expected `\A\s*[0-9a-f]{32}\s*\z`"))
+                    Err(anyhow!(r"Expected `\A\s*[0-9a-f]{{32}}\s*\z`"))
                 }
             })
             .with_context(|| format!("Failed to read {}", path.display()))?;
