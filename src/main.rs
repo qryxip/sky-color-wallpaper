@@ -14,10 +14,10 @@ use strum::{EnumString, EnumVariantNames, IntoStaticStr};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use std::process::{self, Command, Stdio};
+use std::process;
 use std::{env, io};
 
 fn main() {
@@ -321,28 +321,7 @@ struct Patterns {
 }
 
 fn set_wallpaper(path: &str) -> anyhow::Result<()> {
-    fn pidof(program: &str) -> io::Result<bool> {
-        Command::new("/usr/bin/pidof")
-            .arg(program)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-    }
-
     info!("Setting {}", path);
-    if cfg!(target_os = "linux")
-        && if let Some(xdg_current_desktop) = env::var_os("XDG_CURRENT_DESKTOP") {
-            [OsStr::new("i3"), OsStr::new("xmonad"), OsStr::new("bspwm")]
-                .contains(&&*xdg_current_desktop)
-        } else {
-            pidof("i3")? || pidof("xmonad")? || pidof("bspwm")?
-        }
-    {
-        // hack
-        env::set_var("XDG_CURRENT_DESKTOP", "i3");
-    }
     wallpaper::set_from_path(path)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| format!("Failed to set {}", path))?;

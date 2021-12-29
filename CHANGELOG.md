@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added support for wayland compositors.
+- Enabled running for non-popular Linux DE such as LeftWM.
+
 ### Fixed
 
 - Fixed the build.
