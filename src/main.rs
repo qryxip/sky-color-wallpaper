@@ -461,7 +461,7 @@ mod openweathermap {
     use serde::{Deserialize, Deserializer};
     use strum::EnumVariantNames;
     use tracing::info;
-    use url_1::Url;
+    use url::Url;
 
     use std::fmt::Display;
 
@@ -474,7 +474,7 @@ mod openweathermap {
             s.replace(api_key, &api_key.replace(|_| true, "█"))
         }
 
-        let client = reqwest::Client::builder()
+        let client = reqwest::blocking::Client::builder()
             .build()
             .map_err(|e| e.to_string())?;
         let mut url = "https://api.openweathermap.org/data/2.5/weather"
@@ -492,7 +492,7 @@ mod openweathermap {
                 info!("{}", res.status());
                 res.error_for_status()
             })
-            .and_then(|mut r| r.json())
+            .and_then(reqwest::blocking::Response::json)
             .map_err(|e| hide(&e.to_string(), api_key))
     }
 
