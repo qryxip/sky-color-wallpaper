@@ -2,7 +2,6 @@
 compile_error!("unsupported platform");
 
 use anyhow::{anyhow, Context as _};
-use chrono::{DateTime, Local, TimeZone as _};
 use geodate::sun_transit;
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
@@ -11,6 +10,7 @@ use serde::Deserialize;
 use structopt::clap::{AppSettings, Arg};
 use structopt::StructOpt;
 use strum::{EnumString, EnumVariantNames, IntoStaticStr};
+use time::{OffsetDateTime, Time, UtcOffset};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -149,42 +149,50 @@ impl Config {
             today_beginning: i64,
             lon: f64,
             lat: f64,
-        ) -> (
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
-        ) {
+        ) -> anyhow::Result<(
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
+        )> {
+            fn from_unix_timestamp(timestamp: i64) -> anyhow::Result<OffsetDateTime> {
+                let offset = UtcOffset::current_local_offset()
+                    .with_context(|| "could not get the current UTC offset")?;
+                let dt = OffsetDateTime::from_unix_timestamp(timestamp)
+                    .with_context(|| format!("could not recognize {}", timestamp))?;
+                Ok(dt.to_offset(offset))
+            }
+
             let sunrise = sun_transit::get_sunrise(today_beginning, lon, lat)
                 .unwrap_or_else(|| unimplemented!());
-            let sunrise = Local.timestamp(sunrise, 0);
+            let sunrise = from_unix_timestamp(sunrise)?;
 
             let midday = sun_transit::get_midday(today_beginning, lon);
-            let midday = Local.timestamp(midday, 0);
+            let midday = from_unix_timestamp(midday)?;
 
             let sunset = sun_transit::get_sunset(today_beginning, lon, lat)
                 .unwrap_or_else(|| unimplemented!());
-            let sunset = Local.timestamp(sunset, 0);
+            let sunset = from_unix_timestamp(sunset)?;
 
             let midnight = sun_transit::get_midnight(today_beginning, lon);
-            let midnight = if midnight < today_beginning {
-                Local.timestamp(midnight, 0) + chrono::Duration::days(1)
+            let midnight = from_unix_timestamp(if midnight < today_beginning {
+                midnight
             } else {
-                Local.timestamp(today_beginning, 0) + chrono::Duration::days(1)
-            };
+                today_beginning
+            })? + time::Duration::DAY;
 
             info!("sunrise  = {}", sunrise);
             info!("midday   = {}", midday);
             info!("sunset   = {}", sunset);
             info!("midnight = {}", midnight);
 
-            (sunrise, midday, sunset, midnight)
+            Ok((sunrise, midday, sunset, midnight))
         }
 
-        let now = Local::now();
-        let today_beginning = now.date().and_hms(0, 0, 0).timestamp();
+        let now = OffsetDateTime::now_local().with_context(|| "could not get the current time")?;
+        let today_beginning = now.replace_time(Time::MIDNIGHT).unix_timestamp();
 
-        let events = todays_events(today_beginning, self.longitude, self.latitude);
+        let events = todays_events(today_beginning, self.longitude, self.latitude)?;
 
         let weather = self
             .openweathermap
@@ -208,12 +216,12 @@ impl Config {
 
     fn paths(
         &self,
-        now: DateTime<Local>,
+        now: OffsetDateTime,
         events: (
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
         ),
         weather: Option<&openweathermap::CurrentWeatherData>,
     ) -> Vec<String> {
@@ -221,7 +229,7 @@ impl Config {
         if sunrise <= now && now < midday {
             info!("It is morning");
             &self.morning
-        } else if midday <= now && now < sunset - chrono::Duration::minutes(90) {
+        } else if midday <= now && now < sunset - time::Duration::minutes(90) {
             info!("It is early afternoon");
             &self.early_afternoon
         } else if midday <= now && now < sunset {
