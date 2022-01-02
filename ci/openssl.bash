@@ -17,6 +17,8 @@ cd "/tmp/openssl-$OPENSSL_VERSION"
 make
 sudo make install
 
-echo '::set-env name=PKG_CONFIG_ALLOW_CROSS::1'
-echo '::set-env name=OPENSSL_DIR::/usr/local/openssl'
-echo '::set-env name=OPENSSL_STATIC::1'
+cat <<EOF >>"$GITHUB_ENV"
+PKG_CONFIG_ALLOW_CROSS=1
+OPENSSL_DIR=/usr/local/openssl
+OPENSSL_STATIC=1
+EOF

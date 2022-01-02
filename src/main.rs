@@ -2,26 +2,26 @@
 compile_error!("unsupported platform");
 
 use anyhow::{anyhow, Context as _};
-use chrono::{DateTime, Local, TimeZone as _};
+use clap::Parser as _;
+use clap::{AppSettings, Arg};
 use geodate::sun_transit;
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
 use regex::Regex;
 use serde::Deserialize;
-use structopt::clap::{AppSettings, Arg};
-use structopt::StructOpt;
 use strum::{EnumString, EnumVariantNames, IntoStaticStr};
+use time::{OffsetDateTime, Time, UtcOffset};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use std::process::{self, Command, Stdio};
+use std::process;
 use std::{env, io};
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     FmtSubscriber::builder()
         .with_ansi(opt.color.should_enable_ansi_for_stderr())
         .with_max_level(Level::INFO)
@@ -35,17 +35,17 @@ fn main() {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(author, about, setting(AppSettings::DeriveDisplayOrder))]
+#[derive(clap::Parser)]
+#[clap(author, about, setting(AppSettings::DeriveDisplayOrder))]
 struct Opt {
-    #[structopt(
+    #[clap(
         long,
         value_name("PATH"),
         default_config_path(),
         help("Path to the config")
     )]
     config: PathBuf,
-    #[structopt(
+    #[clap(
         long,
         value_name("WHEN"),
         default_value("auto"),
@@ -59,10 +59,10 @@ trait ArgExt: Sized {
     fn default_config_path(self) -> Self;
 }
 
-impl ArgExt for Arg<'static, 'static> {
+impl ArgExt for Arg<'_> {
     fn default_config_path(self) -> Self {
         static VALUE: Lazy<Option<PathBuf>> =
-            Lazy::new(|| dirs::config_dir().map(|d| d.join("sky_color_wallpaper.yml")));
+            Lazy::new(|| dirs_next::config_dir().map(|d| d.join("sky_color_wallpaper.yml")));
         match VALUE.as_ref() {
             None => self.required(true),
             Some(value) => self.default_value_os(value.as_ref()).required(false),
@@ -149,42 +149,50 @@ impl Config {
             today_beginning: i64,
             lon: f64,
             lat: f64,
-        ) -> (
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
-        ) {
+        ) -> anyhow::Result<(
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
+        )> {
+            fn from_unix_timestamp(timestamp: i64) -> anyhow::Result<OffsetDateTime> {
+                let offset = UtcOffset::current_local_offset()
+                    .with_context(|| "could not get the current UTC offset")?;
+                let dt = OffsetDateTime::from_unix_timestamp(timestamp)
+                    .with_context(|| format!("could not recognize {}", timestamp))?;
+                Ok(dt.to_offset(offset))
+            }
+
             let sunrise = sun_transit::get_sunrise(today_beginning, lon, lat)
                 .unwrap_or_else(|| unimplemented!());
-            let sunrise = Local.timestamp(sunrise, 0);
+            let sunrise = from_unix_timestamp(sunrise)?;
 
             let midday = sun_transit::get_midday(today_beginning, lon);
-            let midday = Local.timestamp(midday, 0);
+            let midday = from_unix_timestamp(midday)?;
 
             let sunset = sun_transit::get_sunset(today_beginning, lon, lat)
                 .unwrap_or_else(|| unimplemented!());
-            let sunset = Local.timestamp(sunset, 0);
+            let sunset = from_unix_timestamp(sunset)?;
 
             let midnight = sun_transit::get_midnight(today_beginning, lon);
-            let midnight = if midnight < today_beginning {
-                Local.timestamp(midnight, 0) + chrono::Duration::days(1)
+            let midnight = from_unix_timestamp(if midnight < today_beginning {
+                midnight
             } else {
-                Local.timestamp(today_beginning, 0) + chrono::Duration::days(1)
-            };
+                today_beginning
+            })? + time::Duration::DAY;
 
             info!("sunrise  = {}", sunrise);
             info!("midday   = {}", midday);
             info!("sunset   = {}", sunset);
             info!("midnight = {}", midnight);
 
-            (sunrise, midday, sunset, midnight)
+            Ok((sunrise, midday, sunset, midnight))
         }
 
-        let now = Local::now();
-        let today_beginning = now.date().and_hms(0, 0, 0).timestamp();
+        let now = OffsetDateTime::now_local().with_context(|| "could not get the current time")?;
+        let today_beginning = now.replace_time(Time::MIDNIGHT).unix_timestamp();
 
-        let events = todays_events(today_beginning, self.longitude, self.latitude);
+        let events = todays_events(today_beginning, self.longitude, self.latitude)?;
 
         let weather = self
             .openweathermap
@@ -208,12 +216,12 @@ impl Config {
 
     fn paths(
         &self,
-        now: DateTime<Local>,
+        now: OffsetDateTime,
         events: (
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
-            DateTime<Local>,
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
+            OffsetDateTime,
         ),
         weather: Option<&openweathermap::CurrentWeatherData>,
     ) -> Vec<String> {
@@ -221,7 +229,7 @@ impl Config {
         if sunrise <= now && now < midday {
             info!("It is morning");
             &self.morning
-        } else if midday <= now && now < sunset - chrono::Duration::minutes(90) {
+        } else if midday <= now && now < sunset - time::Duration::minutes(90) {
             info!("It is early afternoon");
             &self.early_afternoon
         } else if midday <= now && now < sunset {
@@ -281,7 +289,7 @@ impl Openweathermap {
                 if let Some(caps) = API_KEY.captures(&content) {
                     Ok(caps[1].to_owned())
                 } else {
-                    Err(anyhow!(r"Expected `\A\s*[0-9a-f]{32}\s*\z`"))
+                    Err(anyhow!(r"Expected `\A\s*[0-9a-f]{{32}}\s*\z`"))
                 }
             })
             .with_context(|| format!("Failed to read {}", path.display()))?;
@@ -321,28 +329,7 @@ struct Patterns {
 }
 
 fn set_wallpaper(path: &str) -> anyhow::Result<()> {
-    fn pidof(program: &str) -> io::Result<bool> {
-        Command::new("/usr/bin/pidof")
-            .arg(program)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-    }
-
     info!("Setting {}", path);
-    if cfg!(target_os = "linux")
-        && if let Some(xdg_current_desktop) = env::var_os("XDG_CURRENT_DESKTOP") {
-            [OsStr::new("i3"), OsStr::new("xmonad"), OsStr::new("bspwm")]
-                .contains(&&*xdg_current_desktop)
-        } else {
-            pidof("i3")? || pidof("xmonad")? || pidof("bspwm")?
-        }
-    {
-        // hack
-        env::set_var("XDG_CURRENT_DESKTOP", "i3");
-    }
     wallpaper::set_from_path(path)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| format!("Failed to set {}", path))?;
@@ -416,7 +403,7 @@ mod de {
     }
 
     fn home_dir() -> Result<String, String> {
-        dirs::home_dir()
+        dirs_next::home_dir()
             .ok_or_else(|| "Home directory not found".to_owned())?
             .into_os_string()
             .into_string()
@@ -480,9 +467,9 @@ mod de {
 mod openweathermap {
     use itertools::Itertools as _;
     use serde::{Deserialize, Deserializer};
-    use strum::EnumVariantNames;
+    use strum::{EnumVariantNames, VariantNames as _};
     use tracing::info;
-    use url_1::Url;
+    use url::Url;
 
     use std::fmt::Display;
 
@@ -495,7 +482,7 @@ mod openweathermap {
             s.replace(api_key, &api_key.replace(|_| true, "█"))
         }
 
-        let client = reqwest::Client::builder()
+        let client = reqwest::blocking::Client::builder()
             .build()
             .map_err(|e| e.to_string())?;
         let mut url = "https://api.openweathermap.org/data/2.5/weather"
@@ -513,7 +500,7 @@ mod openweathermap {
                 info!("{}", res.status());
                 res.error_for_status()
             })
-            .and_then(|mut r| r.json())
+            .and_then(reqwest::blocking::Response::json)
             .map_err(|e| hide(&e.to_string(), api_key))
     }
 
@@ -545,7 +532,7 @@ mod openweathermap {
                 Repr::InvalidMain(main) => Err(serde::de::Error::custom(format!(
                     "unknown variant `{}`, expected integer or one of {}",
                     main,
-                    WeatherMain::variants()
+                    WeatherMain::VARIANTS
                         .iter()
                         .format_with(", ", |s, f| f(&format_args!("`{}`", s))),
                 ))),
