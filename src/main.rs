@@ -62,7 +62,7 @@ trait ArgExt: Sized {
 impl ArgExt for Arg<'static, 'static> {
     fn default_config_path(self) -> Self {
         static VALUE: Lazy<Option<PathBuf>> =
-            Lazy::new(|| dirs::config_dir().map(|d| d.join("sky_color_wallpaper.yml")));
+            Lazy::new(|| dirs_next::config_dir().map(|d| d.join("sky_color_wallpaper.yml")));
         match VALUE.as_ref() {
             None => self.required(true),
             Some(value) => self.default_value_os(value.as_ref()).required(false),
@@ -395,7 +395,7 @@ mod de {
     }
 
     fn home_dir() -> Result<String, String> {
-        dirs::home_dir()
+        dirs_next::home_dir()
             .ok_or_else(|| "Home directory not found".to_owned())?
             .into_os_string()
             .into_string()

@@ -15,7 +15,7 @@ anyhow = "1.0.52"
 atty = "0.2.14"
 chrono = "0.4.19"
 derive_more = "0.99.17"
-dirs = "2.0.2"
+dirs-next = "2.0.0"
 geodate = "0.3.0"
 glob = "0.3.0"
 itertools = "0.8.1"
@@ -35,3 +35,5 @@ wallpaper = "3.2.0"
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3.9"
 winapi-util = "0.1.5"
+
+[features]

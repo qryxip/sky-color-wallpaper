@@ -7,6 +7,12 @@
 - Added support for wayland compositors.
 - Enabled running for non-popular Linux DE such as LeftWM.
 
+### Changed
+
+- Changed the default location of `sky_color_wallpaper.yml` on macOS.
+
+    <https://github.com/xdg-rs/dirs/blob/master/directories/CHANGELOG.md#200---2020-10-22>
+
 ### Fixed
 
 - Fixed the build.
