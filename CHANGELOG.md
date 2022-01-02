@@ -13,6 +13,8 @@
 
     <https://github.com/xdg-rs/dirs/blob/master/directories/CHANGELOG.md#200---2020-10-22>
 
+- [Colorizes the help message](https://docs.rs/clap/latest/clap/enum.AppSettings.html#variant.ColoredHelp) by default.
+
 ### Fixed
 
 - Fixed the build.

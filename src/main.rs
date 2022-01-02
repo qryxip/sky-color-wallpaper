@@ -2,13 +2,13 @@
 compile_error!("unsupported platform");
 
 use anyhow::{anyhow, Context as _};
+use clap::Parser as _;
+use clap::{AppSettings, Arg};
 use geodate::sun_transit;
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom as _;
 use regex::Regex;
 use serde::Deserialize;
-use structopt::clap::{AppSettings, Arg};
-use structopt::StructOpt;
 use strum::{EnumString, EnumVariantNames, IntoStaticStr};
 use time::{OffsetDateTime, Time, UtcOffset};
 use tracing::{error, info, warn, Level};
@@ -21,7 +21,7 @@ use std::process;
 use std::{env, io};
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     FmtSubscriber::builder()
         .with_ansi(opt.color.should_enable_ansi_for_stderr())
         .with_max_level(Level::INFO)
@@ -35,17 +35,17 @@ fn main() {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(author, about, setting(AppSettings::DeriveDisplayOrder))]
+#[derive(clap::Parser)]
+#[clap(author, about, setting(AppSettings::DeriveDisplayOrder))]
 struct Opt {
-    #[structopt(
+    #[clap(
         long,
         value_name("PATH"),
         default_config_path(),
         help("Path to the config")
     )]
     config: PathBuf,
-    #[structopt(
+    #[clap(
         long,
         value_name("WHEN"),
         default_value("auto"),
@@ -59,7 +59,7 @@ trait ArgExt: Sized {
     fn default_config_path(self) -> Self;
 }
 
-impl ArgExt for Arg<'static, 'static> {
+impl ArgExt for Arg<'_> {
     fn default_config_path(self) -> Self {
         static VALUE: Lazy<Option<PathBuf>> =
             Lazy::new(|| dirs_next::config_dir().map(|d| d.join("sky_color_wallpaper.yml")));

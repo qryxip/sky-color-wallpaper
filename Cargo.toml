@@ -13,6 +13,7 @@ repository = "https://github.com/qryxip/sky-color-wallpaper"
 [dependencies]
 anyhow = "1.0.52"
 atty = "0.2.14"
+clap = { version = "3.0.0", features = ["derive"] }
 derive_more = "0.99.17"
 dirs-next = "2.0.0"
 geodate = "0.3.0"
