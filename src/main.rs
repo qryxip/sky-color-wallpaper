@@ -467,7 +467,7 @@ mod de {
 mod openweathermap {
     use itertools::Itertools as _;
     use serde::{Deserialize, Deserializer};
-    use strum::EnumVariantNames;
+    use strum::{EnumVariantNames, VariantNames as _};
     use tracing::info;
     use url::Url;
 
@@ -532,7 +532,7 @@ mod openweathermap {
                 Repr::InvalidMain(main) => Err(serde::de::Error::custom(format!(
                     "unknown variant `{}`, expected integer or one of {}",
                     main,
-                    WeatherMain::variants()
+                    WeatherMain::VARIANTS
                         .iter()
                         .format_with(", ", |s, f| f(&format_args!("`{}`", s))),
                 ))),
